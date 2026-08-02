@@ -23,12 +23,15 @@
   /* touch controls */
   #pads{position:absolute;inset:0;pointer-events:none;display:none}
   @media (pointer:coarse){ #pads{display:block} }
-  .pad{position:absolute;bottom:4%;width:16%;aspect-ratio:1;pointer-events:auto;
-    background:rgba(13,27,61,.55);border:3px solid rgba(245,197,24,.8);border-radius:14px;
-    display:flex;align-items:center;justify-content:center;font-size:clamp(18px,4vw,34px);
+  .pad{position:absolute;bottom:3%;width:11%;max-width:90px;aspect-ratio:1;pointer-events:auto;
+    background:rgba(13,27,61,.45);border:3px solid rgba(245,197,24,.65);border-radius:14px;
+    display:flex;align-items:center;justify-content:center;font-size:clamp(16px,3vw,28px);
     color:var(--gold);user-select:none;-webkit-user-select:none;touch-action:none}
   .pad:active{background:rgba(245,197,24,.35)}
-  #padL{left:3%} #padR{left:21%} #padA{right:3%;border-radius:50%;background:rgba(214,69,65,.5);border-color:#fff}
+  #padL{left:3%} #padR{left:16%} #padA{right:3%;border-radius:50%;background:rgba(214,69,65,.45);border-color:#fff}
+  /* during dialogue: hide movement, slim down A */
+  body.dlg #padL, body.dlg #padR{display:none}
+  body.dlg #padA{width:9%;opacity:.75;bottom:2%}
 </style>
 </head>
 <body>
@@ -426,6 +429,7 @@ function drawLose(){
 /* ================= LOOP ================= */
 function loop(now){
   const dt = Math.min((now-last)/1000, 0.05); last = now;
+  document.body.classList.toggle('dlg', G.mode==='dialog'||G.mode==='solve');
   update(dt);
   drawWorld();
   drawKevin();
