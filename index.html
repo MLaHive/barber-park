@@ -35,8 +35,9 @@
     color:var(--gold);user-select:none;-webkit-user-select:none;touch-action:none}
   .pad:active{background:rgba(245,197,24,.35)}
   #padL{left:3%} #padR{left:16%} #padA{right:3%;border-radius:50%;background:rgba(214,69,65,.45);border-color:#fff}
+  #padB{right:16%;border-radius:50%;background:rgba(63,143,58,.45);border-color:#7ed957}
   /* during dialogue: hide movement, slim down A */
-  body.dlg #padL, body.dlg #padR{display:none}
+  body.dlg #padL, body.dlg #padR, body.dlg #padB{display:none}
   body.dlg #padA{width:9%;opacity:.75;bottom:2%}
 </style>
 </head>
@@ -46,6 +47,7 @@
   <div id="pads">
     <div class="pad px" id="padL">◀</div>
     <div class="pad px" id="padR">▶</div>
+    <div class="pad px" id="padB">▲</div>
     <div class="pad px" id="padA">A</div>
   </div>
 </div></div>
@@ -90,6 +92,7 @@ function jingle(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.12,
 const G = {
   mode:'title',            // title | play | dialog | solve | win | lose
   px: 140, vx:0, facing:1, frame:0, animT:0,
+  py:0, vy:0, grounded:true, jumpHeld:false,
   coins:0, stars:12, time:298, timeAcc:0,
   clues:[false,false,false],
   dlg:null, dlgPage:0, dlgChar:0, dlgDone:false,
@@ -100,7 +103,7 @@ const G = {
 /* ================= LEVEL OBJECTS ================= */
 const cones = [520, 700, 880, 1060, 1240, 1700, 1880];
 const coins = [];
-for (let i=0;i<10;i++) coins.push({x: 380 + i*210 + (i%3)*40, y: GROUND-120, got:false, t:i});
+for (let i=0;i<10;i++) coins.push({x: 380 + i*210 + (i%3)*40, y: (i%2 ? GROUND-152 : GROUND-58), got:false, t:i});
 
 const npcs = [
   { id:0, x: 640,  name:'SHANE — PROJECT MANAGER', pal:{shirt:'#2e8b57',hat:'#e8e8e8',skin:'#e8a15c',pants:'#3a3a3a'},
@@ -157,7 +160,7 @@ function bindPad(id, key){
   el.addEventListener('pointerleave', off);
   el.addEventListener('pointercancel', off);
 }
-bindPad('padL','arrowleft'); bindPad('padR','arrowright'); bindPad('padA','a!');
+bindPad('padL','arrowleft'); bindPad('padR','arrowright'); bindPad('padB','arrowup'); bindPad('padA','a!');
 cv.addEventListener('pointerdown', ()=>{ if(G.mode==='title'||G.mode==='win'||G.mode==='lose') action(); });
 
 /* ================= ACTION BUTTON ================= */
@@ -199,8 +202,16 @@ function beepUnlock(){ try{ AC = AC || new (window.AudioContext||window.webkitAu
 
 function reset(){
   G.mode='title'; G.px=140; G.vx=0; G.facing=1; G.frame=0;
+  G.py=0; G.vy=0; G.grounded=true; G.jumpHeld=false; parts.length=0;
   G.coins=0; G.time=298; G.timeAcc=0; G.clues=[false,false,false];
   G.dlg=null; coins.forEach(c=>c.got=false);
+}
+
+/* ================= DUST ================= */
+const parts=[];
+function spawnDust(x,n){
+  for(let i=0;i<n;i++) parts.push({x:x+(Math.random()*16-8), y:GROUND+2-Math.random()*4,
+    vx:(Math.random()*60-30), vy:-(20+Math.random()*40), life:0.4});
 }
 
 /* ================= UPDATE ================= */
@@ -208,18 +219,47 @@ let last = performance.now();
 function update(dt){
   if (G.mode!=='play') return;
   const L = G.keys['arrowleft']||G.keys['a'], R = G.keys['arrowright']||G.keys['d'];
-  const SPEED = 240;
+  const SPEED = 200;
   G.vx = (R?SPEED:0) - (L?SPEED:0);
   if (G.vx!==0) G.facing = Math.sign(G.vx);
   G.px = Math.max(60, Math.min(WORLD-60, G.px + G.vx*dt));
 
-  // walk animation
-  if (G.vx!==0){ G.animT += dt; if (G.animT>0.12){ G.animT=0; G.frame=(G.frame+1)%WALK.length; } }
-  else { G.frame=0; G.animT=0; }
+  // jump (edge-triggered)
+  const J = G.keys['arrowup']||G.keys['w'];
+  if (J && !G.jumpHeld && G.grounded){
+    G.vy = 800; G.grounded = false; beep(440,0.07,'square',0.08);
+  }
+  G.jumpHeld = !!J;
 
-  // coins
+  // vertical physics: heavier gravity falling than rising
+  if (!G.grounded){
+    G.py += G.vy*dt;
+    G.vy -= (G.vy>0 ? 2400 : 3300)*dt;
+    if (G.py<=0){ G.py=0; G.vy=0; G.grounded=true; spawnDust(G.px,5); }
+  }
+
+  // walk animation synced to stride, with footstep dust
+  if (G.grounded && G.vx!==0){
+    G.animT += dt;
+    if (G.animT>0.085){
+      G.animT=0; G.frame=(G.frame+1)%WALK.length;
+      if (G.frame===0||G.frame===2) spawnDust(G.px - G.facing*6, 2);
+    }
+  } else if (G.grounded){ G.frame=0; G.animT=0; }
+
+  // dust particles
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i];
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=160*dt; p.life-=dt;
+    if (p.life<=0) parts.splice(i,1);
+  }
+
+  // coins: you have to actually reach them now
+  const feet = GROUND - G.py;
   coins.forEach(c=>{
-    if (!c.got && Math.abs(c.x-G.px)<34 ){ c.got=true; G.coins++; beep(1200,0.07,'square',0.12); }
+    if (!c.got && Math.abs(c.x-G.px)<30 && c.y > feet-104 && c.y < feet+6){
+      c.got=true; G.coins++; beep(1200,0.07,'square',0.12);
+    }
   });
 
   // timer
@@ -373,15 +413,23 @@ function drawNPC(n){
   }
 }
 function drawKevin(){
-  const sx = G.px - camX, y = GROUND;
-  const f = (G.vx!==0) ? WALK[G.frame] : 0;
-  shadowW(sx, 19);
+  const sx = G.px - camX, y = GROUND - G.py;
+  const f = !G.grounded ? 2 : (G.vx!==0 ? WALK[G.frame] : 0);
+  const bob = (G.grounded && G.vx!==0 && (G.frame%2===1)) ? 2 : 0;
+  // shadow stays on the ground, shrinking with height
+  const sc = Math.max(0.35, 1 - G.py/260);
+  ctx.fillStyle='rgba(0,0,0,'+(0.22*sc).toFixed(3)+')';
+  ctx.beginPath(); ctx.ellipse(sx,GROUND+4,19*sc,5*sc,0,0,6.3); ctx.fill();
   ctx.save();
-  ctx.translate(sx, y);
+  ctx.translate(sx, y + bob);
   if (G.facing<0) ctx.scale(-1,1);
   if (kevin.complete && kevin.naturalWidth) ctx.drawImage(kevin, f*FW,0,FW,FH, -FW/2,-FH, FW,FH);
-  else { px(-12,-90,24,90,'#2255aa'); } // fallback while loading
+  else { px(-12,-90,24,90,'#2255aa'); }
   ctx.restore();
+  // footstep / landing dust
+  ctx.fillStyle='#c9b08a';
+  parts.forEach(p=>{ ctx.globalAlpha=Math.max(p.life,0)/0.4; ctx.fillRect(p.x-camX-2,p.y-2,4,4); });
+  ctx.globalAlpha=1;
 }
 
 /* ================= DRAW SCENE ================= */
@@ -533,7 +581,7 @@ function drawTitle(){
   ctx.fillText('WHY IS THE PAINT CREW LAYING OUT FIELDS', W/2, 310);
   ctx.fillText('BEFORE THE SEASON STARTS?', W/2, 332);
   ctx.fillStyle='#7ed957'; ctx.font='700 15px "Courier New"';
-  ctx.fillText('← → MOVE      A / SPACE = TALK', W/2, 396);
+  ctx.fillText('← → MOVE    ▲ JUMP    A = TALK', W/2, 396);
   const blink = Math.floor(performance.now()/500)%2===0;
   if (blink){ ctx.fillStyle='#f5c518'; ctx.fillText('PRESS A TO START', W/2, 450); }
 }
