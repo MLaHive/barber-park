@@ -168,12 +168,7 @@ function action(){
   beepUnlock();
   if (G.mode==='title'){
     G.mode='play'; beep(880);
-    // fullscreen on phones/tablets: hides the browser bar
-    if (matchMedia('(pointer:coarse)').matches){
-      const el = document.documentElement;
-      const fs = el.requestFullscreen || el.webkitRequestFullscreen;
-      if (fs) try{ fs.call(el); }catch(e){}
-    }
+    tryFullscreen();
     return;
   }
   if (G.mode==='win'||G.mode==='lose'){ reset(); return; }
@@ -198,6 +193,17 @@ function action(){
     G.mode='solve'; G.dlgPage=0; G.dlgChar=0; G.dlgDone=false; beep(660,0.05);
   }
 }
+function tryFullscreen(){
+  if (!matchMedia('(pointer:coarse)').matches) return;
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  const el = document.documentElement;
+  const fs = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (fs) try{ const r = fs.call(el); if (r && r.catch) r.catch(()=>{}); }catch(e){}
+}
+// retry on the release half of the tap (some browsers reject on pointerdown)
+addEventListener('touchend', ()=>{ if (G.mode!=='title') tryFullscreen(); }, {passive:true});
+addEventListener('click',    ()=>{ if (G.mode!=='title') tryFullscreen(); });
+
 function beepUnlock(){ try{ AC = AC || new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); }catch(e){} }
 
 function reset(){
